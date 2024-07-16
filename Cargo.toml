@@ -1,0 +1,11 @@
+[package]
+name = "bumbling"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sdl2 = { version = "0.37", features = ["image", "ttf", "mixer"] }
+scraper = "0.19.1"
+curl = "0.4.46"
