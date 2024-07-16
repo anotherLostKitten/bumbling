@@ -11,7 +11,7 @@ use html5ever::parse_document;
 use html5ever::tendril::{TendrilSink, Tendril};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 
-fn walk(handle: &Handle, words: Arc<Mutex<HashMap<String, bool>>>, mut in_list: bool, mut pangram: bool) {
+fn walk(handle: &Handle, words: Arc<Mutex<Vec<String>>>, mut in_list: bool, mut pangram: bool) {
     let node = handle;
 
     match node.data {
@@ -19,9 +19,13 @@ fn walk(handle: &Handle, words: Arc<Mutex<HashMap<String, bool>>>, mut in_list: 
             if in_list {
                 let content = contents.borrow();
                 if content.trim() != "" {
-                    let mut word_map = words.lock().unwrap();
-                    word_map.insert(content.trim().to_string(), pangram);
-                    println!("{}: {}", pangram, content.trim());
+                    let mut word_vec = words.lock().unwrap();
+                    if pangram {
+                        word_vec.insert(0, content.trim().to_string());
+                    } else {
+                        word_vec.push(content.trim().to_string());
+                    }
+                    // println!("{}: {}", pangram, content.trim());
                 }
             }
         },
@@ -32,9 +36,6 @@ fn walk(handle: &Handle, words: Arc<Mutex<HashMap<String, bool>>>, mut in_list: 
             ..
         } => {
             assert!(name.ns == ns!(html));
-            // if in_list {
-            //     print!("<{}", name.local);
-            // }
             if in_list && *name.local == *"strong" {
                 pangram = true;
             }
@@ -43,9 +44,7 @@ fn walk(handle: &Handle, words: Arc<Mutex<HashMap<String, bool>>>, mut in_list: 
                 if *attr.name.local == *"id" && attr.value == Tendril::from("main-answer-list") {
                     in_list = true;
                 }
-                //print!(" {}=\"{}\"", attr.name.local, attr.value);
             }
-            //println!(">");
         },
 
         NodeData::ProcessingInstruction { .. } => unreachable!(),
@@ -57,7 +56,7 @@ fn walk(handle: &Handle, words: Arc<Mutex<HashMap<String, bool>>>, mut in_list: 
     }
 }
 
-fn fetch_words_from_web(url: &str, words: Arc<Mutex<HashMap<String, bool>>>) -> Result<(), curl::Error> {
+fn fetch_words_from_web(url: &str, words: Arc<Mutex<Vec<String>>>) -> Result<(), curl::Error> {
     let mut curler = Easy::new();
     curler.url(url)?;
     curler.write_function(move |data| {
@@ -80,12 +79,54 @@ fn fetch_words_from_web(url: &str, words: Arc<Mutex<HashMap<String, bool>>>) -> 
     Ok(())
 }
 
-fn get_letters(words_p: Arc<Mutex<HashMap<String, bool>>>, letters: &mut [char; 7]) {
-    let mut words = words_p.lock().unwrap();
+fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> usize {
+    let words = words_p.lock().unwrap();
+    let mut w_iter = words.iter();
 
-    for (k, v) in words {
-        println!("{}, {}",k, v);
+    let mut l_part = 0;
+
+    for c in w_iter.next().unwrap().chars() {
+        let mut has_letter = false;
+        for i in 0..l_part {
+            if letters[i] == c {
+                has_letter = true;
+                break;
+            }
+        }
+        if !has_letter {
+            letters[l_part] = c;
+            l_part += 1;
+        }
     }
+
+    println!("{:?}", letters);
+
+    for w in w_iter {
+        let mut i = 0;
+        while i < l_part {
+            let mut has_letter = false;
+            for c in w.chars() {
+                if letters[i] == c {
+                    has_letter = true;
+                    break;
+                }
+            }
+            if has_letter {
+                i += 1;
+            } else {
+                println!("word {} missing {}", w, letters[i]);
+                let tmp = letters[i];
+                l_part -= 1;
+                letters[i] = letters[l_part];
+                letters[l_part] = tmp;
+            }
+        }
+    }
+
+    println!("{}", l_part);
+    println!("{:?}", letters);
+
+    return l_part;
 }
 
 fn main() {
@@ -94,13 +135,20 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let mut letters: [char; 7] = ['\0'; 7];
-    let words: Arc<Mutex<HashMap<String, bool>>> = Arc::new(Mutex::new(HashMap::new()));
-    //let words = Box::leak(Box::new(words));
+    let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     if args.len() != 2 {
         eprintln!("usage: cargo run <domain>");
         std::process::exit(1);
     }
     fetch_words_from_web(&args[1], words.clone());
-    get_letters(words.clone(), &mut letters);
+
+    match get_letters(words.clone(), &mut letters) {
+        0 => {},
+        x => {
+            println!("could not determine center letter");
+            std::process::exit(1);
+            // todo we could prompt user to ask them to select one though idk if this ever occurs
+        },
+    };
 }
