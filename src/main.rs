@@ -82,6 +82,10 @@ fn fetch_words_from_web(url: &str, words: Arc<Mutex<HashMap<String, bool>>>) -> 
 
 fn get_letters(words_p: Arc<Mutex<HashMap<String, bool>>>, letters: &mut [char; 7]) {
     let mut words = words_p.lock().unwrap();
+
+    for (k, v) in words {
+        println!("{}, {}",k, v);
+    }
 }
 
 fn main() {
