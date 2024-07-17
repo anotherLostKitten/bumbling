@@ -12,6 +12,10 @@ use html5ever::parse_document;
 use html5ever::tendril::{TendrilSink, Tendril};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 
+macro_rules! argmar {
+    () => {"_"};
+}
+
 fn walk(handle: &Handle, words: Arc<Mutex<Vec<String>>>, mut in_list: bool, mut pangram: bool) {
     let node = handle;
 
@@ -122,6 +126,19 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
             eprintln!("error: word set has more than 7 letters");
         }
 
+        let mut i = 0;
+        while i < l_part {
+            if lset & 1 << (letters[i] as u32 & 31) != 0 {
+                i += 1;
+            } else {
+                println!("word {} missing {}", w, letters[i]);
+                l_part -= 1;
+                if i != l_part {
+                    letters.swap(i, l_part);
+                }
+            }
+        }
+
         if lset == lset_max {
             if wi > pgram_count {
                 words.swap(wi, pgram_count);
@@ -129,22 +146,10 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
             pgram_count += 1;
         }
 
-        let mut i = 0;
-        while i < l_part {
-            if lset & 1 << (letters[i] as u32 & 31) != 0 {
-                i += 1;
-            } else {
-                //println!("word {} missing {}", w, letters[i]);
-                l_part -= 1;
-                if i != l_part {
-                    letters.swap(i, l_part);
-                }
-            }
-        }
     }
 
-    //println!("{}", l_part);
-    //println!("{:?}", letters);
+    println!("pangrams: {}", pgram_count);
+    println!("letters: {:?}", letters);
 
     match l_part {
         0 => {
@@ -186,7 +191,7 @@ fn usage(n: usize) {
     if n > 0 {
         eprintln!("error: at token #{}", n);
     }
-    eprintln!("usage: cargo run ((=w|=s) <url> <path>? | =f <path> | =g <word>+)+");
+    eprintln!(concat!("usage: cargo run ((", argmar!(), "w|", argmar!(), "s) <url> <path>? | ", argmar!(), "f <path> | ", argmar!(), "g <word>+)+"));
     std::process::exit(1);
 }
 
@@ -199,24 +204,25 @@ fn main() {
         usage(1);
     }
     let mut argi = 1;
+    println!("{:?}", args);
     while argi < args.len() {
         let mut letters: [char; 7] = ['\0'; 7];
         let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
         argi += 1;
         match args[argi - 1].as_str() {
-            v @ ("=w" | "=s") => {
-                if argi < args.len() {
+            v @ (concat!(argmar!(), "w") | concat!(argmar!(), "s")) => {
+                if argi >= args.len() {
                     usage(argi);
                 }
                 let url = &args[argi];
-                if url.starts_with("=") {
+                if url.starts_with(argmar!()) {
                     usage(argi);
                 }
                 argi += 1;
 
                 let mut strloc;
-                let path = if argi < args.len() && !args[argi].starts_with("=") {
+                let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
                     argi += 1;
                     Path::new(&args[argi - 1])
                 } else {
@@ -230,18 +236,48 @@ fn main() {
                     }
                 };
 
-                match fetch_words_from_web(&url, words.clone()) {
-                    Ok(_) => {},
-                    Err(e) => {
-                        eprintln!("error: {}", e);
-                        continue;
-                    },
-                };
+                if let Err(e) = fetch_words_from_web(&url, words.clone()) {
+                    eprintln!("error: {}", e);
+                    continue;
+                }
 
                 get_letters(words.clone(), &mut letters);
+
+                if let Err(e) = std::fs::write(path, format!("{}", words.clone().lock().unwrap().join("\n"))) {
+                    eprintln!("could not write file: {}", e);
+                }
+
+                if v == concat!(argmar!(), "s") {
+                    continue;
+                }
+                println!("launch gaem");
             },
-            "=f" => {},
-            "=g" => {},
+            concat!(argmar!(), "f") => {
+                let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
+                    argi += 1;
+                    Path::new(&args[argi - 1])
+                } else {
+                    usage(argi);
+                    return;
+                };
+
+                if let Ok(src) = std::fs::read_to_string(path) {
+                    {
+                        let mut words = words.lock().unwrap();
+                        for w in src.split("\n") {
+                            words.push(w.to_string());
+                        }
+                    }
+                    get_letters(words.clone(), &mut letters);
+                } else {
+                    eprintln!("could not read file {}", path.display());
+                    continue;
+                }
+
+            },
+            concat!(argmar!(), "g") => {
+                eprintln!("workin on it");
+            },
             _ => {usage(argi - 1);},
         }
     }
