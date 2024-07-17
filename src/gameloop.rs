@@ -1,14 +1,19 @@
 use std::sync::{Arc,Mutex};
 use std::time::Duration;
 use std::collections::BTreeMap;
+use std::path::Path;
+use std::string::ToString;
 
 use sdl2::EventPump;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
+use sdl2::video::WindowContext;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::ttf::Font;
+use sdl2::render::TextureCreator;
 
 const FRAMERATE: u32 = 128;
 
@@ -22,10 +27,11 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
                 //println!("te: {:?}", text);
                 for c in text.chars() {
                     for li in 0..7 {
-                        if letters[li] == c {
-                            word.push(c);
+                        if letters[li] == c.to_ascii_lowercase() {
+                            word.push(c.to_ascii_lowercase());
                             break;
                         }
+                        //println!("{}", word);
                     }
                 }
             },
@@ -39,39 +45,81 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
                         if let Some(vv) = found.get_mut(&word as &str) {
                             //println!("found");
                             *vv = true;
+                            word.clear();
                         }
                     },
-                    k => {
-                        println!("kd: {:?}", k)
+                    _k => {
+                        //println!("kd: {:?}", _k);
                     },
                 };
             },
             _x => {
-                //println!("?: {:?}", x);
+                //println!("?: {:?}", _x);
             },
         }
     }
     return true;
 }
 
-fn render(can: &mut Canvas<Window>, letters: &mut [char; 7], word: &mut String, found: &mut BTreeMap<&str, bool>) {
+fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString, rect: Rect) {
+    let surf = font.render(&txt.to_string()).blended(Color::RGBA(0xff, 0xff, 0xff, 0xff)).unwrap();
+    let texture = tc.create_texture_from_surface(&surf).unwrap();
+    can.copy(&texture, None, Some(rect)).unwrap();
+}
+
+fn letrec(i: usize) -> Rect {
+    match i {
+        0 => Rect::new(110, 195, 90, 90),
+        1 => Rect::new(60, 95, 90, 90),
+        2 => Rect::new(160, 95, 90, 90),
+        3 => Rect::new(10, 195, 90, 90),
+        4 => Rect::new(210, 195, 90, 90),
+        5 => Rect::new(60, 295, 90, 90),
+        6 => Rect::new(160, 295, 90, 90),
+        _ => unreachable!(),
+    }
+}
+
+fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, letters: &mut [char; 7], word: &mut String, found: &mut BTreeMap<&str, bool>) {
     can.set_draw_color(Color::RGB(0, 0, 0));
     can.clear();
 
     //let canvsize: (u32, u32) = can.output_size().expect("Could not get canvas size.");
 
     can.set_draw_color(Color::RGB(0x44, 0x44, 0x44));
-    can.fill_rect(Rect::new(60, 95, 90, 90)).unwrap();
-    can.fill_rect(Rect::new(160, 95, 90, 90)).unwrap();
-    can.fill_rect(Rect::new(10, 195, 90, 90)).unwrap();
-    can.fill_rect(Rect::new(210, 195, 90, 90)).unwrap();
-    can.fill_rect(Rect::new(60, 295, 90, 90)).unwrap();
-    can.fill_rect(Rect::new(160, 295, 90, 90)).unwrap();
+    for i in 1..7 {
+        can.fill_rect(letrec(i)).unwrap();
+    }
 
     can.fill_rect(Rect::new(310, 10, 320, 460)).unwrap();
 
     can.set_draw_color(Color::RGB(0x66, 0x66, 0));
-    can.fill_rect(Rect::new(110, 195, 90, 90)).unwrap();
+    can.fill_rect(letrec(0)).unwrap();
+
+    for i in 0..7 {
+        render_text_rect(can, tc, font,
+                         letters[i].to_ascii_uppercase(), letrec(i));
+    }
+
+    if word.len() > 0 {
+        render_text_rect(can, tc, font, word, Rect::new(10, 10, 290, 75));
+    }
+
+    let mut h = 0;
+    let mut w = 0;
+
+    for (ans, isf) in found.iter() {
+        if *isf {
+
+            render_text_rect(can, tc, font, ans,
+                             Rect::new(310 + w * 80, 10 + h * 20, 80, 20));
+
+            h = (h + 1) % 23;
+            if h == 0 {
+                w += 1;
+            }
+        }
+    }
 
     can.present();
 }
@@ -91,6 +139,7 @@ pub fn gameloop(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) {
         .unwrap();
 
     let mut canvas = window.into_canvas().accelerated().build().unwrap();
+    let texture_creator = canvas.texture_creator();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
@@ -98,7 +147,7 @@ pub fn gameloop(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) {
 
     let mut found: BTreeMap<&str, bool> = BTreeMap::new();
 
-    let mut words = words_p.lock().unwrap();
+    let words = words_p.lock().unwrap();
     for w in words.iter() {
         found.insert(&w, false);
     }
@@ -108,7 +157,7 @@ pub fn gameloop(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) {
             break;
         }
 
-        render(&mut canvas, letters, &mut word, &mut found);
+        render(&mut canvas, &texture_creator, &mut font, letters, &mut word, &mut found);
 
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / FRAMERATE));
     }
