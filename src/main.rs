@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use curl::easy::Easy;
 use std::io::Write;
 use std::sync::{Arc,Mutex};
@@ -11,6 +10,8 @@ extern crate markup5ever_rcdom as rcdom;
 use html5ever::parse_document;
 use html5ever::tendril::{TendrilSink, Tendril};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
+
+mod gameloop;
 
 macro_rules! argmar {
     () => {"_"};
@@ -250,7 +251,7 @@ fn main() {
                 if v == concat!(argmar!(), "s") {
                     continue;
                 }
-                println!("launch gaem");
+                gameloop::gameloop(words.clone(), &mut letters);
             },
             concat!(argmar!(), "f") => {
                 let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
@@ -258,7 +259,7 @@ fn main() {
                     Path::new(&args[argi - 1])
                 } else {
                     usage(argi);
-                    return;
+                    unreachable!();
                 };
 
                 if let Ok(src) = std::fs::read_to_string(path) {
@@ -269,11 +270,12 @@ fn main() {
                         }
                     }
                     get_letters(words.clone(), &mut letters);
+
+                    gameloop::gameloop(words.clone(), &mut letters);
                 } else {
                     eprintln!("could not read file {}", path.display());
                     continue;
                 }
-
             },
             concat!(argmar!(), "g") => {
                 eprintln!("workin on it");
