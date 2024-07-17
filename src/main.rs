@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use curl::easy::Easy;
- use std::io::Write;
+use std::io::Write;
 use std::sync::{Arc,Mutex};
+use std::path::Path;
 
 #[macro_use]
 extern crate html5ever;
@@ -79,28 +80,53 @@ fn fetch_words_from_web(url: &str, words: Arc<Mutex<Vec<String>>>) -> Result<(),
     Ok(())
 }
 
-fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> usize {
-    let words = words_p.lock().unwrap();
-    let mut w_iter = words.iter();
+fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> bool {
+    let mut words = words_p.lock().unwrap();
 
     let mut l_part = 0;
 
-    let mut lset: u32 = 0;
+    let mut lset_max: u32 = 0;
 
-    for c in w_iter.next().unwrap().chars() {
-        if lset & 1 << (c as u32 & 31) == 0 {
-            lset |= 1 << (c as u32 & 31);
-            letters[l_part] = c;
-            l_part += 1;
+    'letter_collect: for w in words.iter() {
+        for c in w.chars() {
+            if lset_max & 1 << (c as u32 & 31) == 0 {
+                lset_max |= 1 << (c as u32 & 31);
+                letters[l_part] = c;
+                l_part += 1;
+
+                if l_part == 7 {
+                    break 'letter_collect;
+                }
+            }
         }
     }
 
-    println!("{:?}", letters);
+    if l_part < 7 {
+        eprintln!("error: word set has less than 7 letters");
+        return false;
+    }
 
-    for w in w_iter {
+    //println!("{:?}", letters);
+
+    let mut pgram_count = 0;
+
+    for wi in 0..words.len() {
+        let w = &words[wi];
+
         let mut lset: u32 = 0;
         for c in w.chars() {
             lset |= 1 << (c as u32 & 31);
+        }
+
+        if lset & !lset_max != 0 {
+            eprintln!("error: word set has more than 7 letters");
+        }
+
+        if lset == lset_max {
+            if wi > pgram_count {
+                words.swap(wi, pgram_count);
+            }
+            pgram_count += 1;
         }
 
         let mut i = 0;
@@ -108,46 +134,22 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> usi
             if lset & 1 << (letters[i] as u32 & 31) != 0 {
                 i += 1;
             } else {
-                println!("word {} missing {}", w, letters[i]);
-                let tmp = letters[i];
+                //println!("word {} missing {}", w, letters[i]);
                 l_part -= 1;
-                letters[i] = letters[l_part];
-                letters[l_part] = tmp;
+                if i != l_part {
+                    letters.swap(i, l_part);
+                }
             }
         }
     }
 
-    println!("{}", l_part);
-    println!("{:?}", letters);
+    //println!("{}", l_part);
+    //println!("{:?}", letters);
 
-    return l_part;
-}
-
-fn main() {
-    println!("test");
-
-    let args: Vec<String> = std::env::args().collect();
-
-    let mut letters: [char; 7] = ['\0'; 7];
-    let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-
-    if args.len() != 2 {
-        eprintln!("usage: cargo run <domain>");
-        std::process::exit(1);
-    }
-
-    match fetch_words_from_web(&args[1], words.clone()) {
-        Ok(_) => {},
-        Err(e) => {
-            eprintln!("error: {}", e);
-            std::process::exit(1);
-        },
-    };
-
-    match get_letters(words.clone(), &mut letters) {
+    match l_part {
         0 => {
             eprintln!("error: no possible valid center letter");
-            std::process::exit(1);
+            return false;
         },
         1 => {},
         x => {
@@ -168,13 +170,80 @@ fn main() {
                 };
                 for i in 0..x {
                     if c == letters[i] {
-                        let tmp = letters[0];
-                        letters[0] = letters[i];
-                        letters[i] = tmp;
+                        if i != 0 {
+                            letters.swap(0, i);
+                        }
                         break 'get_center_letter;
                     }
                 }
             }
         },
     };
+    return true;
+}
+
+fn usage(n: usize) {
+    if n > 0 {
+        eprintln!("error: at token #{}", n);
+    }
+    eprintln!("usage: cargo run ((=w|=s) <url> <path>? | =f <path> | =g <word>+)+");
+    std::process::exit(1);
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    let mut file_counter = 0;
+
+    if args.len() < 2 {
+        usage(1);
+    }
+    let mut argi = 1;
+    while argi < args.len() {
+        let mut letters: [char; 7] = ['\0'; 7];
+        let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+        argi += 1;
+        match args[argi - 1].as_str() {
+            v @ ("=w" | "=s") => {
+                if argi < args.len() {
+                    usage(argi);
+                }
+                let url = &args[argi];
+                if url.starts_with("=") {
+                    usage(argi);
+                }
+                argi += 1;
+
+                let mut strloc;
+                let path = if argi < args.len() && !args[argi].starts_with("=") {
+                    argi += 1;
+                    Path::new(&args[argi - 1])
+                } else {
+                    loop {
+                        strloc = format!("default_file_{}.bumble", file_counter);
+                        let path_tst = Path::new(&strloc);
+                        if !path_tst.exists() {
+                            break path_tst
+                        }
+                        file_counter += 1;
+                    }
+                };
+
+                match fetch_words_from_web(&url, words.clone()) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        continue;
+                    },
+                };
+
+                get_letters(words.clone(), &mut letters);
+            },
+            "=f" => {},
+            "=g" => {},
+            _ => {usage(argi - 1);},
+        }
+    }
+
 }
