@@ -132,7 +132,7 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
             if lset & 1 << (letters[i] as u32 & 31) != 0 {
                 i += 1;
             } else {
-                println!("word {} missing {}", w, letters[i]);
+                // println!("word {} missing {}", w, letters[i]);
                 l_part -= 1;
                 if i != l_part {
                     letters.swap(i, l_part);
@@ -149,8 +149,8 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
 
     }
 
-    println!("pangrams: {}", pgram_count);
-    println!("letters: {:?}", letters);
+    // println!("pangrams: {}", pgram_count);
+    // println!("letters: {:?}", letters);
 
     match l_part {
         0 => {
