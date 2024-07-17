@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use curl::easy::Easy;
-// use std::io::{stdout, Write};
+ use std::io::Write;
 use std::sync::{Arc,Mutex};
 
 #[macro_use]
@@ -150,10 +150,31 @@ fn main() {
             std::process::exit(1);
         },
         1 => {},
-        _x => {
-            eprintln!("could not determine center letter");
-            std::process::exit(1);
-            // todo we could prompt user to ask them to select one though idk if this ever occurs
+        x => {
+            'get_center_letter: loop {
+                print!("could not determine center letter, please enter [");
+                for i in 0..x {
+                    print!("{}", letters[i]);
+                }
+                print!("]:");
+                std::io::stdout().flush().unwrap();
+
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf).unwrap();
+                //println!("{}", buf);
+                let c = match buf.chars().next() {
+                    Some(c) => c,
+                    None => {continue;}
+                };
+                for i in 0..x {
+                    if c == letters[i] {
+                        let tmp = letters[0];
+                        letters[0] = letters[i];
+                        letters[i] = tmp;
+                        break 'get_center_letter;
+                    }
+                }
+            }
         },
     };
 }
