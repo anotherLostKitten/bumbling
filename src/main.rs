@@ -85,15 +85,11 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> usi
 
     let mut l_part = 0;
 
+    let mut lset: u32 = 0;
+
     for c in w_iter.next().unwrap().chars() {
-        let mut has_letter = false;
-        for i in 0..l_part {
-            if letters[i] == c {
-                has_letter = true;
-                break;
-            }
-        }
-        if !has_letter {
+        if lset & 1 << (c as u32 & 31) == 0 {
+            lset |= 1 << (c as u32 & 31);
             letters[l_part] = c;
             l_part += 1;
         }
@@ -102,16 +98,14 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> usi
     println!("{:?}", letters);
 
     for w in w_iter {
+        let mut lset: u32 = 0;
+        for c in w.chars() {
+            lset |= 1 << (c as u32 & 31);
+        }
+
         let mut i = 0;
         while i < l_part {
-            let mut has_letter = false;
-            for c in w.chars() {
-                if letters[i] == c {
-                    has_letter = true;
-                    break;
-                }
-            }
-            if has_letter {
+            if lset & 1 << (letters[i] as u32 & 31) != 0 {
                 i += 1;
             } else {
                 println!("word {} missing {}", w, letters[i]);
@@ -141,12 +135,23 @@ fn main() {
         eprintln!("usage: cargo run <domain>");
         std::process::exit(1);
     }
-    fetch_words_from_web(&args[1], words.clone());
+
+    match fetch_words_from_web(&args[1], words.clone()) {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
+        },
+    };
 
     match get_letters(words.clone(), &mut letters) {
-        0 => {},
-        x => {
-            println!("could not determine center letter");
+        0 => {
+            eprintln!("error: no possible valid center letter");
+            std::process::exit(1);
+        },
+        1 => {},
+        _x => {
+            eprintln!("could not determine center letter");
             std::process::exit(1);
             // todo we could prompt user to ask them to select one though idk if this ever occurs
         },
