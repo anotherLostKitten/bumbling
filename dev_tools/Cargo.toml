@@ -1,0 +1,9 @@
+[package]
+name = "dev_tools"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+once_cell = "1.19.0"
+
+dev_macros = { path = "dev_macros" }

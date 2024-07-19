@@ -11,6 +11,8 @@ use html5ever::parse_document;
 use html5ever::tendril::{TendrilSink, Tendril};
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 
+use dev_tools::*;
+
 mod gameloop;
 
 macro_rules! argmar {
@@ -198,15 +200,14 @@ fn usage(n: usize) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-
     let mut file_counter = 0;
-
     if args.len() < 2 {
         usage(1);
     }
     let mut argi = 1;
     println!("{:?}", args);
     while argi < args.len() {
+        println!("{}", live_value_arc!("aaa".to_string()));
         let mut letters: [char; 7] = ['\0'; 7];
         let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
