@@ -48,6 +48,9 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
                             word.clear();
                         }
                     },
+                    Keycode::ESCAPE => {
+                        word.clear();
+                    },
                     _k => {
                         //println!("kd: {:?}", _k);
                     },
@@ -61,8 +64,23 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
     return true;
 }
 
-fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString, rect: Rect) {
+fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString + std::fmt::Display, mut rect: Rect) {
     let surf = font.render(&txt.to_string()).blended(Color::RGBA(0xff, 0xff, 0xff, 0xff)).unwrap();
+    let wmul = rect.width() as f32 / surf.width() as f32;
+    let hmul = rect.height() as f32 / surf.height() as f32;
+
+    if wmul > hmul {
+        let rw = (surf.width() as f32 * hmul) as u32;
+        let ro = ((rect.width() - rw) / 2) as i32;
+        rect.set_width(rw);
+        rect.set_x(rect.x() + ro);
+    } else {
+        let rh = (surf.height() as f32 * wmul) as u32;
+        let ro = ((rect.height() - rh) / 2) as i32;
+        rect.set_height(rh);
+        rect.set_y(rect.y() + ro);
+    }
+
     let texture = tc.create_texture_from_surface(&surf).unwrap();
     can.copy(&texture, None, Some(rect)).unwrap();
 }
