@@ -17,6 +17,17 @@ use sdl2::render::TextureCreator;
 
 const FRAMERATE: u32 = 128;
 
+fn shuffle_letters(letters: &mut [char; 7]) {
+    let mut r: u32 = rand::random();
+    for i in 1..7 {
+        let rn: usize = (6 - r % (7 - i)) as usize;
+        r /= 7 - i;
+        let tmp = letters[i as usize];
+        letters[i as usize] = letters[rn];
+        letters[rn] = tmp;
+    }
+}
+
 pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String, found: &mut BTreeMap<&str, bool>) -> bool {
     for event in pump.poll_iter() {
         match event {
@@ -26,6 +37,9 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
             Event::TextInput {text, ..} => {
                 //println!("te: {:?}", text);
                 for c in text.chars() {
+                    if c == '?' || c == '/' {
+                        shuffle_letters(letters);
+                    }
                     for li in 0..7 {
                         if letters[li] == c.to_ascii_lowercase() {
                             word.push(c.to_ascii_lowercase());
@@ -64,8 +78,12 @@ pub fn control(pump: &mut EventPump, letters: &mut [char; 7], word: &mut String,
     return true;
 }
 
-fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString + std::fmt::Display, mut rect: Rect) {
-    let surf = font.render(&txt.to_string()).blended(Color::RGBA(0xff, 0xff, 0xff, 0xff)).unwrap();
+fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString + std::fmt::Display, rect: Rect) {
+    render_text_rect_color(can, tc, font, txt, rect, Color::RGBA(0xff, 0xff, 0xff, 0xff), true);
+}
+
+fn render_text_rect_color(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &mut Font, txt: impl ToString + std::fmt::Display, mut rect: Rect, color: Color, center: bool) {
+    let surf = font.render(&txt.to_string()).blended(color).unwrap();
     let wmul = rect.width() as f32 / surf.width() as f32;
     let hmul = rect.height() as f32 / surf.height() as f32;
 
@@ -73,7 +91,9 @@ fn render_text_rect(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>
         let rw = (surf.width() as f32 * hmul) as u32;
         let ro = ((rect.width() - rw) / 2) as i32;
         rect.set_width(rw);
-        rect.set_x(rect.x() + ro);
+        if center {
+            rect.set_x(rect.x() + ro);
+        }
     } else {
         let rh = (surf.height() as f32 * wmul) as u32;
         let ro = ((rect.height() - rh) / 2) as i32;
@@ -114,7 +134,9 @@ fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &m
     can.set_draw_color(Color::RGB(0x66, 0x66, 0));
     can.fill_rect(letrec(0)).unwrap();
 
+    let mut lset_max: u32 = 0;
     for i in 0..7 {
+        lset_max |= 1 << (letters[i] as u32 & 31);
         render_text_rect(can, tc, font,
                          letters[i].to_ascii_uppercase(), letrec(i));
     }
@@ -127,12 +149,29 @@ fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &m
     let mut w = 0;
 
     let mut f = 0;
+    let mut mscore = 0;
+    let mut tscore = 0;
     for (ans, isf) in found.iter() {
+        let mut lset: u32 = 0;
+        for c in ans.chars() {
+            lset |= 1 << (c as u32 & 31);
+        }
+
+        let pgram = lset == lset_max;
+        let score = if ans.len() < 5 { 1 } else {
+            ans.len() + if pgram {7} else {0}
+        };
+        mscore += score;
+
         if *isf {
-
-            render_text_rect(can, tc, font, ans,
-                             Rect::new(310 + w * 80, 10 + h * 20, 80, 20));
-
+            tscore += score;
+            let color = if pgram {
+                Color::RGB(0xff, 0xff, 0)
+            } else {
+                Color::RGB(0xff, 0xff, 0xff)
+            };
+            render_text_rect_color(can, tc, font, ans,
+                                   Rect::new(310 + w * 80, 10 + h * 20, 75, 20), color, false);
             h = (h + 1) % 22;
             if h == 0 {
                 w += 1;
@@ -141,7 +180,10 @@ fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &m
         }
     }
 
-    render_text_rect(can, tc, font, format!("{} / {} found", f, found.size()),
+    render_text_rect(can, tc, font, format!("{}/{}", f, found.len()),
+                     Rect::new(310, 450, 80, 20));
+    render_text_rect(can, tc, font, format!("{}/{}", tscore, mscore),
+                     Rect::new(550, 450, 80, 20));
 
     can.present();
 }
@@ -166,6 +208,7 @@ pub fn gameloop(found: &mut BTreeMap<&str, bool>, letters: &mut [char; 7]) {
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let mut word = String::new();
+    shuffle_letters(letters);
 
     loop {
         if !control(&mut event_pump, letters, &mut word, found) {
