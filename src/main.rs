@@ -276,7 +276,7 @@ fn usage(n: usize) {
     if n > 0 {
         eprintln!("error: at token #{}", n);
     }
-    eprintln!(concat!("usage: cargo run ((", argmar!(), "w|", argmar!(), "s) <url> <path>? | ", argmar!(), "f <path> | ", argmar!(), "g <word>+)+"));
+    eprintln!(concat!("usage: ./bumbling ((", argmar!(), "w|", argmar!(), "s) <url> <path>? | ", argmar!(), "f <path>)*"));
     std::process::exit(1);
 }
 
@@ -339,9 +339,6 @@ fn main() {
                 };
 
                 run_game_from_file(path);
-            },
-            concat!(argmar!(), "g") => {
-                eprintln!("yeah this doesn't do anything right now");
             },
             _ => {usage(argi - 1);},
         }
