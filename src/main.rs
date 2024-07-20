@@ -4,6 +4,9 @@ use std::path::Path;
 use std::collections::BTreeMap;
 
 use curl::easy::Easy;
+use chrono::Utc;
+use chrono_tz::US::Pacific;
+use regex::Regex;
 
 #[macro_use]
 extern crate html5ever;
@@ -226,6 +229,49 @@ fn write_save(found: &BTreeMap<&str, bool>, path: &Path) {
     }
 }
 
+fn run_game_from_file(path: &Path) {
+    let mut letters: [char; 7] = ['\0'; 7];
+    let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut found: BTreeMap<&str, bool> = BTreeMap::new();
+
+    if let Ok(src) = std::fs::read_to_string(path) {
+        let mut words = words.lock().unwrap();
+        for w in src.split("\n") {
+            words.push(w.to_string());
+        }
+
+        get_letters(&mut words, &mut letters, &mut found);
+
+        gameloop::gameloop(&mut found, &mut letters);
+
+        write_save(&found, path);
+    } else {
+        eprintln!("could not read file {}", path.display());
+    }
+}
+
+fn run_game_from_web(url: &str, path: &Path, save_only: bool) {
+    let mut letters: [char; 7] = ['\0'; 7];
+    let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut found: BTreeMap<&str, bool> = BTreeMap::new();
+
+    if let Err(e) = fetch_words_from_web(&url, words.clone()) {
+        eprintln!("error: {}", e);
+        return;
+    }
+
+    let mut words = words.lock().unwrap();
+
+    get_letters(&mut words, &mut letters, &mut found);
+
+    if !save_only {
+        gameloop::gameloop(&mut found, &mut letters);
+    }
+
+    write_save(&found, path);
+
+}
+
 fn usage(n: usize) {
     if n > 0 {
         eprintln!("error: at token #{}", n);
@@ -235,18 +281,25 @@ fn usage(n: usize) {
 }
 
 fn main() {
+    let today = format!("{}", Utc::now().with_timezone(&Pacific).format("%Y%m%d"));
+    //println!("{}", today);
     let args: Vec<String> = std::env::args().collect();
-    let mut file_counter = 0;
     if args.len() < 2 {
-        usage(1);
+        let strloc = format!("{}.bumble", today);
+        let path = Path::new(&strloc);
+
+        if path.exists() {
+            run_game_from_file(path);
+        } else {
+            run_game_from_web("https://nytbee.com", path, false);
+        }
+
+        return;
     }
+
     let mut argi = 1;
     println!("{:?}", args);
     while argi < args.len() {
-        let mut letters: [char; 7] = ['\0'; 7];
-        let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-        let mut found: BTreeMap<&str, bool> = BTreeMap::new();
-
         argi += 1;
         match args[argi - 1].as_str() {
             v @ (concat!(argmar!(), "w") | concat!(argmar!(), "s")) => {
@@ -259,35 +312,22 @@ fn main() {
                 }
                 argi += 1;
 
-                let mut strloc;
+                let strloc;
                 let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
                     argi += 1;
                     Path::new(&args[argi - 1])
                 } else {
-                    loop {
-                        strloc = format!("default_file_{}.bumble", file_counter);
-                        let path_tst = Path::new(&strloc);
-                        if !path_tst.exists() {
-                            break path_tst
-                        }
-                        file_counter += 1;
+                    let re = Regex::new(r"Bee_([0-9]{8}).html").unwrap();
+                    if let Some(caps) = re.captures(url) {
+                        strloc = format!("{}.bumble", &caps[1]);
+                        Path::new(&strloc)
+                    } else {
+                        strloc = format!("{}.bumble", today);
+                        Path::new(&strloc)
                     }
                 };
 
-                if let Err(e) = fetch_words_from_web(&url, words.clone()) {
-                    eprintln!("error: {}", e);
-                    continue;
-                }
-
-                let mut words = words.lock().unwrap();
-
-                get_letters(&mut words, &mut letters, &mut found);
-
-                if v == concat!(argmar!(), "w") {
-                    gameloop::gameloop(&mut found, &mut letters);
-                }
-
-                write_save(&found, path);
+                run_game_from_web(&url, &path, v.as_bytes()[1] == 's' as u8);
             },
             concat!(argmar!(), "f") => {
                 let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
@@ -298,21 +338,7 @@ fn main() {
                     unreachable!();
                 };
 
-                if let Ok(src) = std::fs::read_to_string(path) {
-                    let mut words = words.lock().unwrap();
-                    for w in src.split("\n") {
-                        words.push(w.to_string());
-                    }
-
-                    get_letters(&mut words, &mut letters, &mut found);
-
-                    gameloop::gameloop(&mut found, &mut letters);
-
-                    write_save(&found, path);
-                } else {
-                    eprintln!("could not read file {}", path.display());
-                    continue;
-                }
+                run_game_from_file(path);
             },
             concat!(argmar!(), "g") => {
                 eprintln!("yeah this doesn't do anything right now");
