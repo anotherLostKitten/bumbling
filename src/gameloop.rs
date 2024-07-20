@@ -126,18 +126,22 @@ fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &m
     let mut h = 0;
     let mut w = 0;
 
+    let mut f = 0;
     for (ans, isf) in found.iter() {
         if *isf {
 
             render_text_rect(can, tc, font, ans,
                              Rect::new(310 + w * 80, 10 + h * 20, 80, 20));
 
-            h = (h + 1) % 23;
+            h = (h + 1) % 22;
             if h == 0 {
                 w += 1;
             }
+            f += 1;
         }
     }
+
+    render_text_rect(can, tc, font, format!("{} / {} found", f, found.size()),
 
     can.present();
 }
