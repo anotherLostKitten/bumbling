@@ -10,4 +10,5 @@ sdl2 = { version = "0.37", features = ["image", "ttf", "mixer"] }
 curl = "0.4.46"
 html5ever = "0.27.0"
 markup5ever_rcdom = "0.3.0"
-dev_tools = { path = "dev_tools" }
+
+#dev_tools = { path = "dev_tools" }

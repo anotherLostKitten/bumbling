@@ -1,4 +1,4 @@
-use std::sync::{Arc,Mutex};
+//use std::sync::{Arc,Mutex};
 use std::time::Duration;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -124,7 +124,7 @@ fn render(can: &mut Canvas<Window>, tc: &TextureCreator<WindowContext>, font: &m
     can.present();
 }
 
-pub fn gameloop(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) {
+pub fn gameloop(found: &mut BTreeMap<&str, bool>, letters: &mut [char; 7]) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     video_subsystem.text_input().start();
@@ -145,20 +145,15 @@ pub fn gameloop(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) {
 
     let mut word = String::new();
 
-    let mut found: BTreeMap<&str, bool> = BTreeMap::new();
-
-    let words = words_p.lock().unwrap();
-    for w in words.iter() {
-        found.insert(&w, false);
-    }
-
     loop {
-        if !control(&mut event_pump, letters, &mut word, &mut found) {
+        if !control(&mut event_pump, letters, &mut word, found) {
             break;
         }
 
-        render(&mut canvas, &texture_creator, &mut font, letters, &mut word, &mut found);
+        render(&mut canvas, &texture_creator, &mut font, letters, &mut word, found);
 
         std::thread::sleep(Duration::new(0, 1_000_000_000u32 / FRAMERATE));
     }
+
+    println!("saving...");
 }

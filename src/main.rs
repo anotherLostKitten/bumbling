@@ -1,7 +1,9 @@
-use curl::easy::Easy;
 use std::io::Write;
 use std::sync::{Arc,Mutex};
 use std::path::Path;
+use std::collections::BTreeMap;
+
+use curl::easy::Easy;
 
 #[macro_use]
 extern crate html5ever;
@@ -9,9 +11,9 @@ extern crate markup5ever_rcdom as rcdom;
 
 use html5ever::parse_document;
 use html5ever::tendril::{TendrilSink, Tendril};
-use markup5ever_rcdom::{Handle, NodeData, RcDom};
+use rcdom::{Handle, NodeData, RcDom};
 
-use dev_tools::*;
+//use dev_tools::*;
 
 mod gameloop;
 
@@ -87,15 +89,19 @@ fn fetch_words_from_web(url: &str, words: Arc<Mutex<Vec<String>>>) -> Result<(),
     Ok(())
 }
 
-fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> bool {
-    let mut words = words_p.lock().unwrap();
-
+fn get_letters<'a: 'b, 'b>(words: &'a mut Vec<String>, letters: &mut [char; 7], found: &'b mut BTreeMap<&'a str, bool>) -> bool {
     let mut l_part = 0;
 
     let mut lset_max: u32 = 0;
 
     'letter_collect: for w in words.iter() {
+        if w == "" {
+            continue;
+        }
         for c in w.chars() {
+            if c < 'a' || c > 'z' {
+                continue
+            }
             if lset_max & 1 << (c as u32 & 31) == 0 {
                 lset_max |= 1 << (c as u32 & 31);
                 letters[l_part] = c;
@@ -115,14 +121,26 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
 
     //println!("{:?}", letters);
 
-    let mut pgram_count = 0;
+    let mut _pgram_count = 0;
 
     for wi in 0..words.len() {
         let w = &words[wi];
 
+        if w == "" {
+            continue;
+        }
+
+        let mut isfound = false;
+
         let mut lset: u32 = 0;
+        let mut ci = 0;
         for c in w.chars() {
+            if c == '+' {
+                isfound = true;
+                continue;
+            }
             lset |= 1 << (c as u32 & 31);
+            ci += 1;
         }
 
         if lset & !lset_max != 0 {
@@ -134,7 +152,7 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
             if lset & 1 << (letters[i] as u32 & 31) != 0 {
                 i += 1;
             } else {
-                // println!("word {} missing {}", w, letters[i]);
+                //println!("word {} missing {}", w, letters[i]);
                 l_part -= 1;
                 if i != l_part {
                     letters.swap(i, l_part);
@@ -143,15 +161,13 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
         }
 
         if lset == lset_max {
-            if wi > pgram_count {
-                words.swap(wi, pgram_count);
-            }
-            pgram_count += 1;
+            _pgram_count += 1;
         }
 
+        found.insert(&words[wi][..ci], isfound);
     }
 
-    // println!("pangrams: {}", pgram_count);
+    // println!("pangrams: {}", _pgram_count);
     // println!("letters: {:?}", letters);
 
     match l_part {
@@ -190,6 +206,26 @@ fn get_letters(words_p: Arc<Mutex<Vec<String>>>, letters: &mut [char; 7]) -> boo
     return true;
 }
 
+fn write_save(found: &BTreeMap<&str, bool>, path: &Path) {
+    let mut res = String::new();
+
+    for (w, fnd) in found {
+        if *w == "" {
+            continue;
+        }
+        res.push_str(w);
+        if *fnd {
+            //println!("found {}", w);
+            res.push('+');
+        }
+        res.push('\n');
+    }
+
+    if let Err(e) = std::fs::write(path, res) {
+        eprintln!("could not write file: {}", e);
+    }
+}
+
 fn usage(n: usize) {
     if n > 0 {
         eprintln!("error: at token #{}", n);
@@ -207,9 +243,9 @@ fn main() {
     let mut argi = 1;
     println!("{:?}", args);
     while argi < args.len() {
-        println!("{}", live_value_arc!("aaa".to_string()));
         let mut letters: [char; 7] = ['\0'; 7];
         let words: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let mut found: BTreeMap<&str, bool> = BTreeMap::new();
 
         argi += 1;
         match args[argi - 1].as_str() {
@@ -243,16 +279,15 @@ fn main() {
                     continue;
                 }
 
-                get_letters(words.clone(), &mut letters);
+                let mut words = words.lock().unwrap();
 
-                if let Err(e) = std::fs::write(path, format!("{}", words.clone().lock().unwrap().join("\n"))) {
-                    eprintln!("could not write file: {}", e);
+                get_letters(&mut words, &mut letters, &mut found);
+
+                if v == concat!(argmar!(), "w") {
+                    gameloop::gameloop(&mut found, &mut letters);
                 }
 
-                if v == concat!(argmar!(), "s") {
-                    continue;
-                }
-                gameloop::gameloop(words.clone(), &mut letters);
+                write_save(&found, path);
             },
             concat!(argmar!(), "f") => {
                 let path = if argi < args.len() && !args[argi].starts_with(argmar!()) {
@@ -264,22 +299,23 @@ fn main() {
                 };
 
                 if let Ok(src) = std::fs::read_to_string(path) {
-                    {
-                        let mut words = words.lock().unwrap();
-                        for w in src.split("\n") {
-                            words.push(w.to_string());
-                        }
+                    let mut words = words.lock().unwrap();
+                    for w in src.split("\n") {
+                        words.push(w.to_string());
                     }
-                    get_letters(words.clone(), &mut letters);
 
-                    gameloop::gameloop(words.clone(), &mut letters);
+                    get_letters(&mut words, &mut letters, &mut found);
+
+                    gameloop::gameloop(&mut found, &mut letters);
+
+                    write_save(&found, path);
                 } else {
                     eprintln!("could not read file {}", path.display());
                     continue;
                 }
             },
             concat!(argmar!(), "g") => {
-                eprintln!("workin on it");
+                eprintln!("yeah this doesn't do anything right now");
             },
             _ => {usage(argi - 1);},
         }
